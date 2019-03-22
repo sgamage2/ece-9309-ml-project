@@ -41,25 +41,26 @@ def run_experiment(exp_params):
     exp_num = exp_params['experiment_num']
     print('\n================= Running experiment no. {}  ================= \n'.format(exp_num))
 
-    args = ""
+    # command_args = ""
+    command_args = ["ipython", "LANL_NB.ipynb", "--"]
     results_dir = ""
 
     for arg_name, arg_val in exp_params.items():
-        # print("arg_name={}, arg_val={}".format(arg_name, arg_val))
-        args = args + " --" + arg_name + " " + arg_val
+        command_args.append("--" + arg_name)
+        command_args.append(arg_val)
 
         if arg_name == 'results_dir':
             results_dir = arg_val
 
     assert len(results_dir) > 0
 
-    command = "ipython LANL_NB.ipynb --" + args
-    print(command)
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
 
     output_log_filename = results_dir + '/' + 'output.log'
 
     with open(output_log_filename, 'w') as output_log_file:
-        p = subprocess.Popen(command, stdout=subprocess.PIPE)
+        p = subprocess.Popen(command_args, stdout=subprocess.PIPE)
         for line in iter(p.stdout.readline, b''):
             line_str = str(line.strip().decode('UTF-8'))
             print(line_str)

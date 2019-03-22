@@ -1,4 +1,5 @@
 import time
+import argparse
 
 import numpy as np
 import pandas as pd
@@ -43,7 +44,9 @@ def print_info(df):
     pd.set_option("display.precision", 15)  # Show more decimals
     print(df.head())
 
-    # print(df.acoustic_data.describe())  # Some stats; can take time if dataset is large
+    #print(df.acoustic_data.describe())  # Some stats; can take time if dataset is large
+    #print(df.time_to_failure.describe())
+
 
 
 def truncate_dataset(df, start_row, end_row):
@@ -110,3 +113,35 @@ def plot_results(true_series, pred_series, title, filename):
 
     plt.savefig(filename, bbox_inches='tight')
     print('Predictions plot saved to: {}'.format(filename))
+
+
+def set_params_from_command_line(params):
+    parser = argparse.ArgumentParser(description='LSTM notebook')
+
+    for key, val in params.__dict__.items():
+        switch_name = "--" + key
+        param_type = type(val)
+        if param_type == list:
+            param_type = str
+
+        # print(switch_name)
+        parser.add_argument(switch_name, required=False, type=param_type)
+
+    args = parser.parse_args()
+
+    for key, val in params.__dict__.items():
+        param_type = type(val)
+        arg_param_value = getattr(args, key)
+
+        if param_type == list:
+            element_type = type(val[0])
+            arg_param_value = [element_type(item) for item in arg_param_value.split(',')]
+
+        setattr(params, key, arg_param_value)
+
+
+def print_params(params):
+    for key, val in params.__dict__.items():
+        print('{} = {}'.format(key, val))
+        param_type = type(val)
+

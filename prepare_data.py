@@ -105,16 +105,18 @@ if __name__ == "__main__":
     # Following 3 function calls are meant to be run only once
     # prepare_training_dataset()
     # prepare_validation_dataset()
-    prepare_test_dataset()
+    # prepare_test_dataset()
 
     # file_lengths_info(test_files_directory) # Just to check the signal size in test files
 
     # # ---- We will now work with the truncated training set
     #
-    train_df = utility.read_hdf(truncated_train_hdf_file, hdf_key)
+    train_df = utility.read_hdf(train_hdf_file, hdf_key)
     utility.print_info(train_df)
     
-    utility.plot_series(train_df, 'Truncated_training_series', './')
+    #utility.plot_series(train_df, 'Truncated_training_series', './')
+    
+    #plt.show()
 
     pass
 

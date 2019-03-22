@@ -1,4 +1,6 @@
 import sys, os, csv
+import subprocess
+
 
 def print_help():
     print('Usage:')
@@ -40,17 +42,32 @@ def run_experiment(exp_params):
     print('\n================= Running experiment no. {}  ================= \n'.format(exp_num))
 
     args = ""
+    results_dir = ""
 
     for arg_name, arg_val in exp_params.items():
         # print("arg_name={}, arg_val={}".format(arg_name, arg_val))
         args = args + " --" + arg_name + " " + arg_val
 
+        if arg_name == 'results_dir':
+            results_dir = arg_val
+
+    assert len(results_dir) > 0
+
     command = "ipython LANL_NB.ipynb --" + args
     print(command)
 
-    os.system(command)
+    output_log_filename = results_dir + '/' + 'output.log'
 
-    print('Finished running experiment no. {} ================= \n'.format(exp_num))
+    with open(output_log_filename, 'w') as output_log_file:
+        p = subprocess.Popen(command, stdout=subprocess.PIPE)
+        for line in iter(p.stdout.readline, b''):
+            line_str = str(line.strip().decode('UTF-8'))
+            print(line_str)
+            output_log_file.write(line_str + '\n')
+        p.stdout.close()
+        p.wait()
+
+    print('\n================= Finished running experiment no. {} ================= \n'.format(exp_num))
 
 
 if __name__ == "__main__":

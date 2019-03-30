@@ -1,0 +1,3 @@
+experiment_num,results_dir,scaling_type,time_steps,rnn_layer_units,rnn_layer_dropout_rate,epochs,batch_size,down_sample
+1,results/exp_1,MinMaxScaler,10,"10,5,2","0.3,0.5,0",3,128,60000
+2,results/exp_2,None,20,"3,2,1","0.2,0.2,0",2,64,50000

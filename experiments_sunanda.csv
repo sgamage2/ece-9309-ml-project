@@ -1,3 +1,4 @@
-experiment_num,results_dir,scaling_type,time_steps,rnn_layer_units,rnn_layer_dropout_rate,epochs,batch_size,down_sample
-#1,results/exp_1,StandardScaler,100,"50,25","0.2,0.2",50,64,10000
-2,results/exp_2,None,100,"50,30,20","0.2,0.2,0.2",40,64,10000
+experiment_num,results_dir,scaling_type,time_steps,rnn_layer_units,rnn_layer_dropout_rate,epochs,batch_size,down_sample,description
+#1,results/exp_1,StandardScaler,100,"50,25","0.2,0.2",10,64,10000,nothing
+#2,results/exp_2,None,100,"50,30,20","0.2,0.2,0.2",40,64,10000,nothing
+3,results/exp_3,StandardScaler,100,"10,5","0.2,0.2",2,64,10000,"""small experiment just to check whether code is running"""

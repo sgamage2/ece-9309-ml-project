@@ -4,3 +4,14 @@ results/
 .ipynb_checkpoints/explore_lanl_data-checkpoint.py
 results/
 __pycache__/
+results/current_run/training_history.png
+results/current_run/train_true_vs_pred.png
+results/current_run/train_prediction.csv
+results/current_run/test_true_vs_pred.png
+results/current_run/test_prediction.csv
+results/current_run/rnn_plot.png
+results/current_run/LANL_NB.html
+results/current_run/final_model.h5
+results/current_run/Downsampled training series.png
+__pycache__/utility.cpython-36.pyc
+.ipynb_checkpoints/utility-checkpoint.py

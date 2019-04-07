@@ -26,7 +26,7 @@ def read_csv(filename):
     print('Reading {} complete. time_to_read={}'.format(filename, time.time() - t0))
 
     return dataset_df   # This is a Pandas DataFrame
-	
+
 
 def write_to_hdf(df, filename, key, compression_level):
     print('Writing dataset to HDF5 format. filename={}'.format(filename))
@@ -48,13 +48,12 @@ def print_info(df):
     #print(df.time_to_failure.describe())
 
 
-
 def truncate_dataset(df, start_row, end_row):
     print('Truncating the dataset. start_row={}, end_row={}'.format(start_row, end_row))
     trunc_df = df[start_row:end_row]
     print('Truncating complete. trunc_df.shape={}'.format(trunc_df.shape))
     return trunc_df
-	
+
 
 def plot_series(df, title, save_dir):
     print('Plotting series')
@@ -84,8 +83,8 @@ def plot_series(df, title, save_dir):
     #plt.show()
     
     print('Plotting complete. time_to_plot={:.2f} seconds'.format(time.time() - t0))
-	
-	
+
+
 def plot_training_history(history, save_dir):
     plt.figure()
     plt.title("Training history")
@@ -101,9 +100,10 @@ def plot_training_history(history, save_dir):
     filename = save_dir + '/' + 'training_history' + '.png'
     plt.savefig(filename, bbox_inches='tight')
     print('Plot saved to: {}'.format(filename))
-	
-	
+
+
 def plot_results(true_series, pred_series, title, filename):
+    plt.figure()
     plt.plot(true_series, color = 'red', label = 'True time_to_earthquake')
     plt.plot(pred_series, color = 'blue', label = 'Predicted time_to_earthquake')
     plt.title(title)

@@ -1,7 +1,6 @@
 import sys, os, csv
 import subprocess
 
-
 def print_help():
     print('Usage:')
     print('./run_experiments.py <experiments_filename>')
@@ -28,7 +27,7 @@ def get_experiments(filename):
     experiments = []
 
     with open(filename, mode='r') as experiments_file:
-        csv_dict_reader = csv.DictReader(experiments_file)
+        csv_dict_reader = csv.DictReader(filter(lambda row: row[0]!='#', experiments_file))
 
         for row in csv_dict_reader:
             experiments.append(row)

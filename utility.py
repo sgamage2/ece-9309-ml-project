@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
 
 def read_hdf(filename, key):
     t0 = time.time()
@@ -145,3 +147,11 @@ def print_params(params):
         print('{} = {}'.format(key, val))
         param_type = type(val)
 
+
+def metrics(y_true, y_pred):
+    mse = mean_squared_error(y_true, y_pred)
+    rmse = mse ** 0.5
+    mae = mean_absolute_error(y_true, y_pred)
+    r2 = r2_score(y_true, y_pred)
+
+    return mse, rmse, mae, r2

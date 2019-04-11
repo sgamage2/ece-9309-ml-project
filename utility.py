@@ -155,3 +155,58 @@ def metrics(y_true, y_pred):
     r2 = r2_score(y_true, y_pred)
 
     return mse, rmse, mae, r2
+
+
+def ma_filter(y1, y2, N):
+    y1 = y1.reshape((-1,))  # For pandas MA function below
+    y1 = pd.Series(y1).rolling(window=N).mean().iloc[N - 1:].values
+    y2 = y2[N - 1:]  # Because the MA filtered version is shorter than the original
+    return y1, y2
+
+
+def derivative(dataset, order):
+    dataset = np.array(dataset)
+    X, y = dataset[:, 0], dataset[:, -1]
+    X_diff = np.diff(X, n=order)
+    y_shortened = y[order:] # Drop some values from the beginning
+    assert len(X_diff) == len(y_shortened)
+    data = {'X_diff': X_diff, 'y_shortened': y_shortened}
+    dataset_diff = pd.DataFrame(data)
+    return dataset_diff
+
+
+def get_feature(dataset, feature):
+    if feature == 'original':
+        data = {'X': dataset[:, 0], 'y': dataset[:, 1]}
+        original = pd.DataFrame(data)
+        return original
+    elif feature == 'log':
+        assert False    # Cannot support log, as the signal has negative values
+        x_log = np.log(dataset[:, 0])
+        data = {'X': x_log, 'y': dataset[:, 1]}
+        logarithm = pd.DataFrame(data)
+        return logarithm
+    elif feature.startswith("derivative"):
+        elements = feature.split("_")
+        assert len(elements) == 2
+        order = int(elements[1])
+        dataset_diff = derivative(dataset, order)
+        return dataset_diff
+    else:
+        assert False, 'Unsupported feature: {}'.format(feature)
+
+
+def trim_to_same_length(features, ys):
+    lengths = []
+    for feature_df in features:
+        lengths.append(feature_df.shape[0])
+
+    min_length = min(lengths)
+
+    for feature_df, y_df in zip(features, ys):
+        cur_len = feature_df.shape[0]
+        to_drop = cur_len - min_length
+        if to_drop > 0:
+            # print("Dropping, cur_len={}, min_length={}".format(cur_len, min_length))
+            feature_df.drop(feature_df.head(to_drop).index, inplace=True)
+            y_df.drop(y_df.head(to_drop).index, inplace=True)

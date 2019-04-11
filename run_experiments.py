@@ -36,6 +36,7 @@ def get_experiments(filename):
 
     return experiments
 
+
 def run_experiment(exp_params):
     exp_num = exp_params['experiment_num']
     print('\n================= Running experiment no. {}  ================= \n'.format(exp_num))

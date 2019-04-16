@@ -1,7 +1,7 @@
 experiment_num,results_dir,scaling_type,time_steps,rnn_layer_units,rnn_layer_dropout_rate,epochs,batch_size,down_sample,window_stride,ma_window,features,description
 #1,results/exp_1,StandardScaler,100,"50,25","0.2,0.2",10,64,10000,1,1,original,nothing
 #2,results/exp_2,None,100,"50,30,20","0.2,0.2,0.2",40,64,10000,1,1,original,nothing
-#3,results/exp_3,StandardScaler,100,"10,5","0.2,0.2",5,64,10000,25,1,"original,derivative_1,derivative_2","""small experiment just to check whether code is running"""
+3,results/exp_3,StandardScaler,100,"10,5","0.2,0.2",5,64,10000,25,1,"original,derivative_1,derivative_2","""small experiment just to check whether code is running"""
 #4,results/exp_4,None,75,"20,10","0.2,0",30,64,10000,1,25,original,"""replicate results in Fig. 10-a --> done"""
 #5,results/exp_5,None,75,"20,10","0.2,0.2",100,32,5000,37,1,original,"""tune window_stride --> done"""
 #6,results/exp_6,None,200,"20,10","0.2,0.2",100,32,1000,40,1,original,"""tune time_steps --> done"""
@@ -9,4 +9,4 @@ experiment_num,results_dir,scaling_type,time_steps,rnn_layer_units,rnn_layer_dro
 #8,results/exp_8,None,200,"50,30,20","0.05,0.05, 0.05",100,32,1000,40,1,original,"""tune LSTM layers --> done"""
 #9,results/exp_9,None,200,"20,10","0.05,0.05",100,32,1000,40,1,original,
 #10,results/exp_10,None,200,"20,10","0.05,0.05",100,32,1000,40,25,original,"""test output MA filter with 7_2 params"""
-11,results/exp_11,None,200,"20,10","0.05,0.05",100,32,1000,40,25,"original,derivative_1","""tune features"""
+#11,results/exp_11,None,200,"20,10","0.05,0.05",100,32,1000,40,25,"original,derivative_1","""tune features"""

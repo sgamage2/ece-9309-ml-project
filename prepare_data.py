@@ -15,23 +15,44 @@ import utility
 train_csv_file = '../LANL-Earthquake-Prediction/train.csv'
 test_files_directory = '../LANL-Earthquake-Prediction/test'
 test_file_1 = '../LANL-Earthquake-Prediction/test/seg_00a37e.csv'
-train_hdf_file = '../LANL-Earthquake-Prediction/train_hdf_converted.h5'
+train_hdf_file = '../LANL-Earthquake-Prediction/full_train_hdf_converted.h5'
 hdf_key = 'my_key'
+
+
+# Small dataset params
+
+# # Training dataset parameters
+# train_start_row = 0
+# train_end_row = 139000000    # 22% out of 620 million rows (captures 4 earthquakes)
+# truncated_train_hdf_file = '../LANL-Earthquake-Prediction/truncated_train_hdf.h5'
+#
+# # Validation dataset parameters
+# validation_start_row = 139000000
+# validation_end_row = 219000000    # 13% out of 620 million rows (captures 2 earthquakes)
+# validation_hdf_file = '../LANL-Earthquake-Prediction/validation_hdf.h5'
+#
+# # Test dataset parameters
+# test_start_row = 219000000
+# test_end_row = 246000000    # 4% out of 620 million rows (captures 1 earthquake)
+# test_hdf_file = '../LANL-Earthquake-Prediction/test_hdf_xxxxx.h5'
+
+
+# Large dataset params
 
 # Training dataset parameters
 train_start_row = 0
-train_end_row = 139000000    # 22% out of 620 million rows (captures 4 earthquakes)
-truncated_train_hdf_file = '../LANL-Earthquake-Prediction/truncated_train_hdf.h5'
+train_end_row = 356827066    # 356 million = 57% out of 620 million rows (captures 9 earthquakes)
+truncated_train_hdf_file = '../LANL-Earthquake-Prediction/large_train_hdf.h5'
 
 # Validation dataset parameters
-validation_start_row = 139000000
-validation_end_row = 219000000    # 13% out of 620 million rows (captures 2 earthquakes)
-validation_hdf_file = '../LANL-Earthquake-Prediction/validation_hdf.h5'
+validation_start_row = 356827067
+validation_end_row = 512288669    # 155 million = 25% out of 620 million rows (captures 4 earthquakes)
+validation_hdf_file = '../LANL-Earthquake-Prediction/large_validation_hdf.h5'
 
 # Test dataset parameters
-test_start_row = 219000000
-test_end_row = 246000000    # 4% out of 620 million rows (captures 1 earthquake)
-test_hdf_file = '../LANL-Earthquake-Prediction/test_hdf_xxxxx.h5'
+test_start_row = 512288670
+test_end_row = 629145480    #  116 million = 18% out of 620 million rows (captures 3 earthquake)
+test_hdf_file = '../LANL-Earthquake-Prediction/large_test_hdf.h5'
 
 # -----------------------------------------------
 
@@ -105,14 +126,14 @@ if __name__ == "__main__":
     # Following 3 function calls are meant to be run only once
     # prepare_training_dataset()
     # prepare_validation_dataset()
-    # prepare_test_dataset()
+    prepare_test_dataset()
 
     # file_lengths_info(test_files_directory) # Just to check the signal size in test files
 
     # # ---- We will now work with the truncated training set
     #
-    train_df = utility.read_hdf(train_hdf_file, hdf_key)
-    utility.print_info(train_df)
+    # train_df = utility.read_hdf(train_hdf_file, hdf_key)
+    # utility.print_info(train_df)
     
     #utility.plot_series(train_df, 'Truncated_training_series', './')
     

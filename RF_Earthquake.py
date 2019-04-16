@@ -6,25 +6,38 @@ Created on Sun Apr  7 11:33:03 2019
 """
 # In[1]:
 import numpy as np
-import pandas as pd
-import time, os
-import tensorflow as tf
+import os, time
 import utility
 import scipy.stats
-import matplotlib.pyplot as plt
-import statistics as st
+
+import matplotlib
+matplotlib.use('Agg')
+
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.tree import export_graphviz
 import pydot as dot
 import six
 from sklearn import tree
+import pickle
 
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+# Variables that determines how the script behaves
 
-#from fastai.structured import draw_tree
-# In[2]:
-# Hardware (GPU or CPU)
+# Data was converted from CSV to HDF then truncated
+hdf_key = 'my_key'
 
+# Change the following to point to proper local paths
+truncated_train_hdf_file = '../LANL-Earthquake-Prediction/truncated_train_hdf.h5'
+validation_hdf_file = '../LANL-Earthquake-Prediction/validation_hdf.h5'
+test_hdf_file = '../LANL-Earthquake-Prediction/test_hdf.h5'
+
+# Folder to save results
+results_dir = 'results/random_forest_run'
+
+# Parameters to tune
+down_sample = 1000
+window_size = 100
+window_stride = 20
+num_trees = 1000
 
 def compute_statistical_features(window, moment_order):
     # num_moments = 1 + moment_order * 2  # mean + central moments, non-central moments
@@ -62,43 +75,33 @@ def prepare_dataset(dataset, window_size, window_stride):
     return X_features, y
 
 
+def do_predictions(model, X, y, dataset_name, filename):
+    y_pred = model.predict(X)
+
+    y_pred, y = utility.ma_filter(y_pred, y, 25)
+
+    mse, rmse, mae, r2 = utility.metrics(y, y_pred)
+
+    print('Error metrics on {}. mse: {:.4f}, rmse: {:.4f}, mae: {:.4f}, r2: {:.4f}'.
+            format(dataset_name, mse, rmse, mae, r2))
+
+    title = 'True vs predicted time_to_earthquake on {}'.format(dataset_name)
+
+    utility.plot_results(y, y_pred, title, filename)
+
+
 def main():
-    os.environ[
-        'CUDA_VISIBLE_DEVICES'] = '-1'  # Disable GPU as it appears to be slower than CPU (to enable GPU, comment out this line and restart the kernel)
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
 
-    device_name = tf.test.gpu_device_name()
+    print('\n================= Random Forest parameters used for this run ================= \n')
+    print("down_sample = {} \nwindow_size = {} \nwindow_stride = {} \nnum_trees = {}"
+          .format(down_sample, window_size, window_stride, num_trees, ))
+    print('\n============================================================================== \n')
 
-    if device_name:
-        print('GPU device found: {}. Using GPU'.format(device_name))
-    else:
-        print("GPU device not found. Using CPU")
-        # raise SystemError('GPU device not found')   # Stop the program if GPU is unavailabile: disabled for now
-
-    # In[3]:
-    # Variables that determines how the script behaves
-
-    # Data was convereted from CSV to HDF then truncated
-    hdf_key = 'my_key'
-
-    # Change the following to point to proper local paths
-    truncated_train_hdf_file = '../LANL-Earthquake-Prediction/truncated_train_hdf.h5'
-    validation_hdf_file = '../LANL-Earthquake-Prediction/validation_hdf.h5'
-    test_hdf_file = '../LANL-Earthquake-Prediction/test_hdf.h5'
-
-    # Folder to save results
-    results_dir = 'results/current_run'
-
-    do_plot_series = False
-
-    # In[4]:
     train_df = utility.read_hdf(truncated_train_hdf_file, hdf_key)
     valid_df = utility.read_hdf(validation_hdf_file, hdf_key)
     test_df = utility.read_hdf(test_hdf_file, hdf_key)
-
-    # Parameters to tune
-    down_sample = 5000
-    window_size = 100
-    window_stride = 20
 
     # Downsample the dataset
     train_df = train_df.iloc[::down_sample, :]
@@ -112,73 +115,49 @@ def main():
 
     # Compute statistical features on a window
     Xtrain, Ytrain = prepare_dataset(train_df, window_size, window_stride)
+    Xvalid, Yvalid = prepare_dataset(valid_df, window_size, window_stride)
+    Xtest, Ytest = prepare_dataset(test_df, window_size, window_stride)
 
-    # Train
+    print("Dataset sizes. Xtrain={}, Xvalid={}, Xtest={}".format(Xtrain.shape, Xvalid.shape, Xtest.shape))
+
+    # Train the model
     print("Training Random Forest")
-    reg = RandomForestRegressor(n_estimators=500, max_features=7, min_samples_split=30)
+    t0 = time.time()
+    reg = RandomForestRegressor(n_estimators=num_trees, max_features=7, min_samples_split=30)
     reg.fit(Xtrain, Ytrain)
+    time_to_train = time.time() - t0
+    print("Training complete. time_to_train = {} seconds".format(time_to_train))
 
     print("Drawing forest")
     dotfile = six.StringIO()
     tree.export_graphviz(reg.estimators_[0], out_file='tree.dot', filled=True, rounded=True)
     os.system('dot -Tpng tree.dot -o tree.png')
 
+    # Save model
+    model_filename = results_dir + '/' + 'rf_model.pkl'
+    with open(model_filename, 'wb') as file:
+        pickle.dump(reg, file)
+
     # Predict on training set
     print("Predicting on training set")
-    Ytraing_pred = reg.predict(Xtrain)
-
-    Ytraing_pred, Ytrain = utility.ma_filter(Ytraing_pred, Ytrain, 25)
-
-    train_mse, train_rmse, train_mae, train_r2 = utility.metrics(Ytrain, Ytraing_pred)
-
-    print(
-        'Error metrics on training set. train_mse: {:.4f}, train_rmse: {:.4f}, train_mae: {:.4f}, train_r2: {:.4f}'.format(
-            train_mse, train_rmse, train_mae, train_r2))
-
-    plt.figure()
-    plt.plot(Ytrain)
-    plt.plot(Ytraing_pred)
-
-    # plt.show()
+    t0 = time.time()
+    train_res_plot_filename = results_dir + '/' + 'train_true_vs_pred' + '.png'
+    do_predictions(reg, Xtrain, Ytrain, "training set", train_res_plot_filename)
+    print("Predictions on training set complete. time_to_predict = {}".format(time.time() - t0))
 
     # Predict on validation set
-
-    Xvalid, Yvalid = prepare_dataset(valid_df, window_size, window_stride)
-
     print("Predicting on validation set")
-    Yvalid_pred = reg.predict(Xvalid)
-
-    Yvalid_pred, Yvalid = utility.ma_filter(Yvalid_pred, Yvalid, 25)
-
-    valid_mse, valid_rmse, valid_mae, valid_r2 = utility.metrics(Yvalid, Yvalid_pred)
-
-    print(
-        'Error metrics on validation set. validation_mse: {:.4f}, validation_rmse: {:.4f}, validation_mae: {:.4f}, validation_r2: {:.4f}'.
-        format(valid_mse, valid_rmse, valid_mae, valid_r2))
-
-    plt.figure()
-    plt.plot(Yvalid)
-    plt.plot(Yvalid_pred)
+    t0 = time.time()
+    valid_res_plot_filename = results_dir + '/' + 'validation_true_vs_pred' + '.png'
+    do_predictions(reg, Xvalid, Yvalid, "validation set", valid_res_plot_filename)
+    print("Predictions on validation set complete. time_to_predict = {}".format(time.time() - t0))
 
     # Predict on test set
-
-    Xtest, Ytest = prepare_dataset(test_df, window_size, window_stride)
-
     print("Predicting on test set")
-    Ytest_pred = reg.predict(Xtest)
-
-    Ytest_pred, Ytest = utility.ma_filter(Ytest_pred, Ytest, 25)
-
-    test_mse, test_rmse, test_mae, test_r2 = utility.metrics(Ytest, Ytest_pred)
-
-    print('Error metrics on test set. test_mse: {:.4f}, test_mse: {:.4f}, test_mae: {:.4f}, test_r2: {:.4f}'.format(
-        test_mse, test_rmse, test_mae, test_r2))
-
-    plt.figure()
-    plt.plot(Ytest)
-    plt.plot(Ytest_pred)
-
-    plt.show()
+    t0 = time.time()
+    test_res_plot_filename = results_dir + '/' + 'test_true_vs_pred' + '.png'
+    do_predictions(reg, Xtest, Ytest, "test set", test_res_plot_filename)
+    print("Predictions on test set complete. time_to_predict = {}".format(time.time() - t0))
 
 
 if __name__ == "__main__":

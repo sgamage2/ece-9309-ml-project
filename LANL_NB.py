@@ -61,7 +61,6 @@ matplotlib.use('Agg')
 #%matplotlib inline
 
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 import tensorflow as tf
 
@@ -69,6 +68,7 @@ from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import LSTM
 from keras.layers import Dropout
+from keras.callbacks import EarlyStopping
 
 # To visualize the RNN network
 from keras.utils.vis_utils import plot_model
@@ -82,7 +82,7 @@ import utility  # Contains various helper utility functions
 
 # Hardware (GPU or CPU)
 
-#os.environ['CUDA_VISIBLE_DEVICES'] = '-1'   # Disable GPU as it appears to be slower than CPU (to enable GPU, comment out this line and restart the kernel)
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'   # Disable GPU as it appears to be slower than CPU (to enable GPU, comment out this line and restart the kernel)
 
 device_name = tf.test.gpu_device_name()
 
@@ -123,19 +123,25 @@ params = Parameters()
 # Data preprocessing
 params.scaling_type = 'None'   # Supports: None, StandardScaler, MinMaxScaler
 params.down_sample = 40000
+params.features = ['original', 'derivative_1', 'derivative_2']   # Currently supports: original, derivative_n
 
 # LSTM network architecture
 params.time_steps = 50
+params.window_stride = 25
 params.rnn_layer_units = [10, 5, 2]   # The length of this list = no. of hidden layers
 params.rnn_layer_dropout_rate = [0.2, 0.2, 0]   # Dropout rate for each layer (0 for no dropout)
 
 # Training
 params.epochs = 2
-params.batch_size = 64
+params.batch_size = 32
+
+# Post-processing
+params.ma_window = 25   # The size of the Moving Average filter that will be applied to the output time_to_earthquake
 
 # Admin variables unrelated to RNN parameters
 params.results_dir = 'results/current_run'   # Folder to save results
 params.experiment_num = -1   # For bookkeeping; currently not used
+params.description = ''   # To print in the log
 
 
 # In[5]:
@@ -185,7 +191,7 @@ valid_df = utility.read_hdf(validation_hdf_file, hdf_key)
 test_df = utility.read_hdf(test_hdf_file, hdf_key)
 
 
-# In[9]:
+# In[10]:
 
 
 utility.print_info(train_df)
@@ -194,7 +200,7 @@ if do_plot_series:
     utility.plot_series(train_df, "Training series", params.results_dir) # This is time and memory consuming. Do not run this cell unless necessary
 
 
-# In[10]:
+# In[11]:
 
 
 utility.print_info(valid_df)
@@ -203,7 +209,7 @@ if do_plot_series:
     utility.plot_series(valid_df, "Validation series", params.results_dir) # This is time and memory consuming. Do not run this cell unless necessary
 
 
-# In[11]:
+# In[12]:
 
 
 utility.print_info(test_df)
@@ -242,52 +248,96 @@ if do_plot_series:
 # 
 # 
 
-# In[12]:
-
-
-#train_df.max()
-
-
-# In[13]:
-
-
-#train_df.min()
-
-
 # # Recurrent Neural Network - LSTM
 # 
 # ## Part 1 - Data Preprocessing
+# 
+# ### Part 1.1 - [Filtering] + Downsampling
 
-# In[10]:
+# In[13]:
 
 
 # Importing the training set
 """Temporary: we downsample the training datatset to reduce time!"""
 
 dataset_train = train_df.iloc[::params.down_sample,:]
-training_set = dataset_train.iloc[:, 0:2].values
+
 print("Training will be performed on downsampled dataset which consists of ",dataset_train.shape[0],
       " examples out of the original number of training examples which is ", train_df.shape[0])
 
 utility.plot_series(dataset_train, "Downsampled training series", params.results_dir)
 
+training_set = dataset_train.values
 
-# In[15]:
+
+# In[14]:
 
 
 dataset_train.info()
 dataset_train.head()
 
 
-# In[13]:
+# In[15]:
+
+
+# Import validation set
+"""Temporary: we downsample the testing datatset to reduce time!"""
+dataset_valid = valid_df.iloc[::params.down_sample, :]
+
+print("Validation will be performed on truncated dataset which consists of ", dataset_valid.shape[0],
+      " examples out of the original number of validation examples which is ", valid_df.shape[0])
+
+final_valid_set = dataset_valid
+
+utility.plot_series(final_valid_set, "Downsampled validation series", params.results_dir)
+
+final_valid_set = final_valid_set.values
+
+
+# In[16]:
+
+
+dataset_valid.info()
+dataset_valid.head()
+
+
+# In[17]:
+
+
+# Import test set
+"""Temporary: we downsample the testing datatset to reduce time!"""
+dataset_test = test_df.iloc[::params.down_sample, :]
+
+print("Testing will be performed on truncated dataset which consists of ", dataset_test.shape[0],
+      " examples out of the original number of test examples which is ", test_df.shape[0])
+
+final_test_set = dataset_test
+
+utility.plot_series(final_test_set, "Downsampled test series", params.results_dir)
+
+final_test_set = final_test_set.values
+
+
+# In[18]:
+
+
+dataset_test.info()
+dataset_test.head()
+
+
+# ### Part 1.2 - Feature scaling
+
+# In[19]:
 
 
 # Feature Scaling
-print('Scaling the training set. scaling_type={}'.format(params.scaling_type))
+print('Scaling the datasets. scaling_type={}'.format(params.scaling_type))
 t0 = time.time()
     
 if params.scaling_type == 'None':
     training_set_scaled = training_set
+    valid_set_scaled = final_valid_set
+    test_set_scaled = final_test_set
 else:
     if params.scaling_type == 'MinMaxScaler':
         scaler = MinMaxScaler(feature_range=(0, 1))
@@ -295,17 +345,70 @@ else:
         scaler = StandardScaler()
     
     signal_scaled = scaler.fit_transform(training_set[:,0].reshape(-1,1))
-
     training_set_scaled = training_set.copy()   # May not be necessary
     training_set_scaled[:,0] = signal_scaled.reshape(-1)
+    
+    signal_scaled = scaler.fit_transform(final_valid_set[:,0].reshape(-1,1))
+    valid_set_scaled = final_valid_set.copy()   # May not be necessary
+    valid_set_scaled[:,0] = signal_scaled.reshape(-1)
+    
+    signal_scaled = scaler.fit_transform(final_test_set[:,0].reshape(-1,1))
+    test_set_scaled = final_test_set.copy()   # May not be necessary
+    test_set_scaled[:,0] = signal_scaled.reshape(-1)
+    
+    #valid_set_scaled = scaler.transform(final_valid_set)
+    #test_set_scaled = scaler.transform(final_test_set)
 
 print('Scaling complete. time_to_scale={:.2f} seconds'.format(time.time() - t0))
 
 
-# In[14]:
+# ### Part 1.3 - Feature engineering (derivatives, log, etc)
+
+# In[25]:
 
 
-# Creating the training dataset (X_train and y_train) 
+train_features = []
+train_ys = []
+
+valid_features = []
+valid_ys = []
+
+test_features = []
+test_ys = []
+
+for feature in params.features:
+    train_feature = utility.get_feature(training_set_scaled, feature)
+    train_features.append(train_feature.iloc[:,0])   # 0th column contains the feature
+    train_ys.append(train_feature.iloc[:,1])   # 1st column contains y
+    
+    valid_feature = utility.get_feature(valid_set_scaled, feature)
+    valid_features.append(valid_feature.iloc[:,0])
+    valid_ys.append(valid_feature.iloc[:,1])
+    
+    test_feature = utility.get_feature(test_set_scaled, feature)
+    test_features.append(test_feature.iloc[:,0])
+    test_ys.append(test_feature.iloc[:,1])
+
+utility.trim_to_same_length(train_features, train_ys)
+utility.trim_to_same_length(valid_features, valid_ys)
+utility.trim_to_same_length(test_features, test_ys)
+
+train_ys = train_ys[0]   # Because all the ys dataframes in this list are the same
+valid_ys = valid_ys[0]
+test_ys = test_ys[0]
+
+# for i, feature in enumerate(params.features):
+#     print(feature)
+#     print("X_shape = {}".format(train_features[i].shape))
+#     print("y_shape = {}".format(train_ys[i].shape))
+
+
+# ### Part 1.4 - Preparing time-windowed data matrix (to feed to the LSTM)
+
+# In[37]:
+
+
+# Creating the training dataset (X_train and y_train)
 # X_train is a numpy array with some no. of examples. Each example is a seismic signal window of length time_steps
 # y_train has the same no. of examples. Each example is the time_to_eq value that corresponds to the last element of seismic signal window (just 1 value)
 
@@ -318,14 +421,21 @@ t0 = time.time()
 
 X_train = []
 y_train = []
+
+num_features = len(params.features)
+
+for i in range (params.time_steps, train_ys.shape[0], params.window_stride):
+    X_window = np.zeros((params.time_steps, num_features))
+    for j, feature_df in enumerate(train_features):
+        X_window[:, j] = feature_df.iloc[i - params.time_steps:i]
     
-for i in range (params.time_steps, training_set_scaled.shape[0]): 
-    X_train.append (training_set_scaled[i - params.time_steps:i, 0])
-    y_train.append (training_set_scaled[i, 1])
-X_train, y_train = np.array (X_train), np.array (y_train)
+    X_train.append(X_window)
+    y_train.append(train_ys.iloc[i])
+
+X_train, y_train = np.array(X_train), np.array(y_train)
 
 # Reshaping since RNN accepts 3d input
-X_train = np.reshape (X_train, (X_train.shape[0], X_train.shape[1], 1))
+X_train = np.reshape (X_train, (X_train.shape[0], X_train.shape[1], num_features))
 y_train = np.reshape (y_train, (-1, 1))   # Not required when we are predicting just one output value, but necessary when we predict more
 print ("The 3d shape necessary for RNN's input is ", X_train.shape, " . Note how the number of examples is reduced by the defined time steps, i.e. ", params.time_steps)
 
@@ -333,18 +443,57 @@ assert X_train.shape[1] == params.time_steps
 
 print('Preparing input complete. time_to_prepare={:.2f} seconds'.format(time.time() - t0))
 
+print(X_train.shape)
+print(y_train.shape)
 
-# In[15]:
+
+# In[39]:
 
 
-#Check
-#print(training_set_scaled[99,0], " ", training_set_scaled[100,1])  # Gives errors when time_steps != 100 (fix this bug)
-#print(X_train[0,99,0]," ", y_train[0])
+X_valid = []
+y_valid = []
+
+for i in range(params.time_steps, valid_ys.shape[0], params.window_stride):
+    X_window = np.zeros((params.time_steps, num_features))
+    for j, feature_df in enumerate(valid_features):
+        X_window[:, j] = feature_df.iloc[i - params.time_steps:i]
+    
+    X_valid.append(X_window)
+    y_valid.append(valid_ys.iloc[i])
+
+X_valid = np.array(X_valid)
+X_valid = np.reshape(X_valid, (X_valid.shape[0], X_valid.shape[1], num_features))
+y_valid = np.reshape (y_valid, (-1, 1))   # Not required when we are predicting just one output value, but necessary when we predict more
+
+print(X_valid.shape)
+print(y_valid.shape)
+
+
+# In[41]:
+
+
+X_test = []
+y_test = []
+
+for i in range(params.time_steps, test_ys.shape[0], params.window_stride):
+    X_window = np.zeros((params.time_steps, num_features))
+    for j, feature_df in enumerate(test_features):
+        X_window[:, j] = feature_df.iloc[i - params.time_steps:i]
+    
+    X_test.append(X_window)
+    y_test.append(test_ys.iloc[i])
+
+X_test = np.array(X_test)
+X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], num_features))
+y_test = np.reshape(y_test, (-1, 1))   # Not required when we are predicting just one output value, but necessary when we predict more
+
+print(X_test.shape)
+print(y_test.shape)
 
 
 # ## Part 2 - Building the RNN
 
-# In[16]:
+# In[42]:
 
 
 # Initialising the RNN
@@ -359,7 +508,7 @@ for i, (units, dropout_rate) in enumerate(zip(params.rnn_layer_units, params.rnn
     
     # Set special args for first and last layer
     if i == 0:  # First hidden layer
-        input_shape = (params.time_steps, 1)
+        input_shape = (params.time_steps, num_features)
     if i == len(params.rnn_layer_units) - 1:   # Last hidden layer
         return_sequences = False
         
@@ -367,16 +516,16 @@ for i, (units, dropout_rate) in enumerate(zip(params.rnn_layer_units, params.rnn
     regressor.add (Dropout(dropout_rate))
 
 # Adding the output layer
-regressor.add (Dense (units=1))
+regressor.add (Dense(units=1))
 
 # Compiling the RNN
-regressor.compile (optimizer='adam', loss='mean_squared_error')
+regressor.compile(optimizer='adam', loss='mean_squared_error')
 regressor.summary()
 
 
 # ## Part 3 - Training the RNN
 
-# In[17]:
+# In[44]:
 
 
 print('Training the RNN with the training set')
@@ -384,13 +533,15 @@ t0 = time.time()
 
 #with tf.device('/cpu:0'):
 
-history = regressor.fit (X_train, y_train, epochs=params.epochs, batch_size=params.batch_size)
+earlyStopping = EarlyStopping(monitor='val_loss', patience=5, verbose=2, mode='auto')
+
+history = regressor.fit(X_train, y_train, epochs=params.epochs, batch_size=params.batch_size, validation_data=(X_valid, y_valid), callbacks=[earlyStopping], verbose=2)
 
 time_to_train = time.time() - t0
 print('Training complete. time_to_train={:.2f} seconds ({:.2f} minutes)'.format(time_to_train, time_to_train/60))
 
 
-# In[18]:
+# In[45]:
 
 
 # Save the final trained model (in case we need to continue training from this point on)
@@ -401,7 +552,7 @@ regressor.save(model_filepath, overwrite=True)
 print('RNN model saved to {}'.format(model_filepath))
 
 
-# In[20]:
+# In[46]:
 
 
 utility.plot_training_history(history, params.results_dir)
@@ -413,60 +564,10 @@ print('RNN plot saved to {}'.format(model_plot_filename))
 
 
 # ## Part 4 - Making the predictions and visualising the results
+# 
+# ### Part 4.1 - Predicting on the training set
 
-# In[21]:
-
-
-# Import validation set
-"""Temporary: we downsample the testing datatset to reduce time!"""
-dataset_test = valid_df.iloc[::params.down_sample,:]
-true_test_time = dataset_test.iloc[:,1].values
-print("Validation will be performed on truncated dataset which consists of ", dataset_test.shape[0],
-      " examples out of the original number of training examples which is ", valid_df.shape[0])
-
-
-# In[38]:
-
-
-dataset_test.info()
-dataset_test.head()
-
-
-# In[23]:
-
-
-#Because we have time_steps time steps and we we want to predict the first entry of time_to_failure in the validation set, we have to look back time_steps samples. 
-#Hence, we get these time_steps past samples from the training set. This is why we first concatenate both training and validation. This step may be omitted if we just need to predict one value
-#for the whole test set (such as in the provided test files where one value is only needed so we can look back in the same data provided ) 
-dataset_total = pd.concat((dataset_train['acoustic_data'], dataset_test['acoustic_data']), axis = 0)
-inputs = dataset_total[len(dataset_total) - len(dataset_test) - params.time_steps:].values
-inputs = inputs.reshape(-1,1)
-
-# Feature Scaling
-if params.scaling_type == 'None':
-    inputs_scaled = inputs
-else:
-    print('Scaling the inputs set. scaling_type={}'.format(params.scaling_type))
-    t0 = time.time()
-    inputs_scaled = scaler.transform(inputs) 
-    print('Scaling complete. time_to_scale={:.2f} seconds'.format(time.time() - t0))
-
-inputs_scaled.shape # So we end up with input size = size of validation set + time_steps
-
-
-# In[24]:
-
-
-X_test = []
-
-for i in range(params.time_steps, inputs_scaled.shape[0]):
-    X_test.append(inputs_scaled[i-params.time_steps:i, 0])
-X_test = np.array(X_test)
-X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
-X_test.shape
-
-
-# In[25]:
+# In[47]:
 
 
 # Predict on training set
@@ -474,11 +575,16 @@ X_test.shape
 print('Predicting on the training set using the trained RNN')
 t0 = time.time()
 train_predicted_time = regressor.predict(X_train)
+
+train_predicted_time_orig = train_predicted_time.copy()  # To plot
+
+train_predicted_time, y_train = utility.ma_filter(train_predicted_time.reshape((-1,)), y_train, params.ma_window)
+
 #predicted_time = sc.inverse_transform(predicted_time)
 print('Predicting on the training set complete. time_to_predict={:.2f} seconds'.format(time.time() - t0))
 
 
-# In[26]:
+# In[48]:
 
 
 # Save predictions on training set
@@ -486,34 +592,108 @@ print('Predicting on the training set complete. time_to_predict={:.2f} seconds'.
 train_prediction = pd.DataFrame(train_predicted_time)
 train_pred_filename = params.results_dir + '/' + 'train_prediction.csv'
 train_prediction.to_csv(train_pred_filename)
-print('Predictions on train set saved to {}'.format(train_pred_filename))
+
+train_prediction_orig = pd.DataFrame(train_predicted_time_orig)
+train_pred_orig_filename = params.results_dir + '/' + 'train_prediction_orig.csv'
+train_prediction_orig.to_csv(train_pred_orig_filename)
+
+print('Predictions on train set saved to {}, and {}'.format(train_pred_filename, train_pred_orig_filename))
 
 
-# In[27]:
+# In[49]:
 
 
 # Visualize predictions on training set
 
-true_train_time = dataset_train.iloc[:,1].values
-true_train_time = true_train_time[params.time_steps:]   # Ignore the first time_steps values (because predictions are not available for those)
+train_res_orig_plot_filename = params.results_dir + '/' + 'train_true_vs_pred_orig' + '.png'
+utility.plot_results(y_train, train_prediction_orig, 'True (orig) vs predicted time_to_earthquake on train set', train_res_orig_plot_filename)
 
 train_res_plot_filename = params.results_dir + '/' + 'train_true_vs_pred' + '.png'
-utility.plot_results(true_train_time, train_prediction, 'True vs predicted time_to_earthquake on train set', train_res_plot_filename)
+utility.plot_results(y_train, train_prediction, 'True vs predicted time_to_earthquake on train set', train_res_plot_filename)
 
 
-# In[28]:
+# In[50]:
 
 
 # Compute error metrics on training set
 
-train_mse = mean_squared_error(true_train_time, train_predicted_time)
-train_rmse = train_mse ** 0.5
-train_mae = mean_absolute_error(true_train_time, train_predicted_time)
+N = params.ma_window
+train_mse, train_rmse, train_mae, train_r2 = utility.metrics(y_train, train_predicted_time_orig[N-1:])
 
-print('Error metrics on test set. train_mse: {:.4f}, train_rmse: {:.4f}, train_mae: {:.4f}'.format(train_mse, train_rmse, train_mae))
+print('Error metrics on training set without MA filter (original). train_mse: {:.4f}, train_rmse: {:.4f}, train_mae: {:.4f}, train_r2: {:.4f}'.
+      format(train_mse, train_rmse, train_mae, train_r2))
+
+train_mse, train_rmse, train_mae, train_r2 = utility.metrics(y_train, train_predicted_time)
+
+print('Error metrics on training set with MA filter (filtered). train_mse: {:.4f}, train_rmse: {:.4f}, train_mae: {:.4f}, train_r2: {:.4f}'.
+      format(train_mse, train_rmse, train_mae, train_r2))
 
 
-# In[29]:
+# ### Part 4.2 - Predicting on the validation set
+
+# In[51]:
+
+
+# Predict on validation set
+
+print('Predicting on the validation set using the trained RNN')
+t0 = time.time()
+valid_predicted_time = regressor.predict(X_valid)
+
+valid_predicted_time_orig = valid_predicted_time.copy()
+
+valid_predicted_time, y_valid = utility.ma_filter(valid_predicted_time.reshape((-1,)), y_valid, params.ma_window)
+
+print('Predicting on the validation set complete. time_to_predict={:.2f} seconds'.format(time.time() - t0))
+
+
+# In[52]:
+
+
+# Save predictions on validation set
+
+valid_prediction = pd.DataFrame(valid_predicted_time)
+valid_pred_filename = params.results_dir + '/' + 'validation_prediction.csv'
+valid_prediction.to_csv(valid_pred_filename)
+
+valid_prediction_orig = pd.DataFrame(valid_predicted_time_orig)
+valid_pred_orig_filename = params.results_dir + '/' + 'validation_prediction_orig.csv'
+valid_prediction_orig.to_csv(valid_pred_orig_filename)
+
+print('Predictions on validation set saved to {}, and {}'.format(valid_pred_filename, valid_pred_orig_filename))
+
+
+# In[53]:
+
+
+# Visualize predictions on validation set
+
+valid_res_orig_plot_filename = params.results_dir + '/' + 'validation_true_vs_pred_orig' + '.png'
+utility.plot_results(y_valid, valid_prediction_orig, 'True (orig) vs predicted time_to_earthquake on validation set', valid_res_orig_plot_filename)
+
+valid_res_plot_filename = params.results_dir + '/' + 'validation_true_vs_pred' + '.png'
+utility.plot_results(y_valid, valid_prediction, 'True vs predicted time_to_earthquake on validation set', valid_res_plot_filename)
+
+
+# In[55]:
+
+
+# Compute error metrics on validation set
+
+valid_mse, valid_rmse, valid_mae, valid_r2 = utility.metrics(y_valid, valid_predicted_time_orig[N-1:])
+
+print('Error metrics on validation set without MA filter (original). valid_mse: {:.4f}, valid_rmse: {:.4f}, valid_mae: {:.4f}, valid_r2: {:.4f}'.
+      format(valid_mse, valid_rmse, valid_mae, valid_r2))
+
+valid_mse, valid_rmse, valid_mae, valid_r2 = utility.metrics(y_valid, valid_predicted_time)
+
+print('Error metrics on validation set with MA filter (filtered). valid_mse: {:.4f}, valid_rmse: {:.4f}, valid_mae: {:.4f}, valid_r2: {:.4f}'.
+      format(valid_mse, valid_rmse, valid_mae, valid_r2))
+
+
+# ### Part 4.3 - Predicting on the test set
+
+# In[56]:
 
 
 # Predict on test set
@@ -521,11 +701,15 @@ print('Error metrics on test set. train_mse: {:.4f}, train_rmse: {:.4f}, train_m
 print('Predicting on the test set using the trained RNN')
 t0 = time.time()
 test_predicted_time = regressor.predict(X_test)
-#predicted_time = sc.inverse_transform(predicted_time)
+
+test_predicted_time_orig = test_predicted_time.copy()
+
+test_predicted_time, y_test = utility.ma_filter(test_predicted_time.reshape((-1,)), y_test, params.ma_window)
+
 print('Predicting on the test set complete. time_to_predict={:.2f} seconds'.format(time.time() - t0))
 
 
-# In[30]:
+# In[57]:
 
 
 # Save predictions on test set
@@ -533,33 +717,45 @@ print('Predicting on the test set complete. time_to_predict={:.2f} seconds'.form
 test_prediction = pd.DataFrame(test_predicted_time)
 test_pred_filename = params.results_dir + '/' + 'test_prediction.csv'
 test_prediction.to_csv(test_pred_filename)
-print('Predictions on test set saved to {}'.format(test_pred_filename))
+
+test_prediction_orig = pd.DataFrame(test_predicted_time_orig)
+test_pred_orig_filename = params.results_dir + '/' + 'test_prediction_orig.csv'
+test_prediction_orig.to_csv(test_pred_orig_filename)
+
+print('Predictions on validation set saved to {}, and {}'.format(test_pred_filename, test_pred_orig_filename))
 
 
-# In[33]:
+# In[58]:
 
 
 # Visualize predictions on test set
 
+test_res_orig_plot_filename = params.results_dir + '/' + 'test_true_vs_pred_orig' + '.png'
+utility.plot_results(y_test, test_prediction_orig, 'True (orig) vs predicted time_to_earthquake on test set', test_res_orig_plot_filename)
+
 test_res_plot_filename = params.results_dir + '/' + 'test_true_vs_pred' + '.png'
-utility.plot_results(true_test_time, test_prediction, 'True vs predicted time_to_earthquake on test set', test_res_plot_filename)
+utility.plot_results(y_test, test_prediction, 'True vs predicted time_to_earthquake on test set', test_res_plot_filename)
 
 
-# In[34]:
+# In[59]:
 
 
 # Compute error metrics on test set
 
-test_mse = mean_squared_error(true_test_time, test_predicted_time)
-test_rmse = test_mse ** 0.5
-test_mae = mean_absolute_error(true_test_time, test_predicted_time)
+test_mse, test_rmse, test_mae, test_r2 = utility.metrics(y_test, test_predicted_time_orig[N-1:])
 
-print('Error metrics on test set. test_mse: {:.4f}, test_rmse: {:.4f}, test_mae: {:.4f}'.format(test_mse, test_rmse, test_mae))
+print('Error metrics on test set without MA filter (original). test_mse: {:.4f}, test_rmse: {:.4f}, test_mae: {:.4f}, test_r2: {:.4f}'.
+      format(test_mse, test_rmse, test_mae, test_r2))
+
+test_mse, test_rmse, test_mae, test_r2 = utility.metrics(y_test, test_predicted_time)
+
+print('Error metrics on test set with MA filter (filtered). test_mse: {:.4f}, test_rmse: {:.4f}, test_mae: {:.4f}, test_r2: {:.4f}'.
+      format(test_mse, test_rmse, test_mae, test_r2))
 
 
-# In[35]:
+# In[ ]:
 
 
 # Save the output (results) of this notebook to the results_dir folder
-get_ipython().run_line_magic('sx', 'jupyter nbconvert --to html --output-dir=$params.results_dir --TemplateExporter.exclude_input=True LANL_NB.ipynb')
+# get_ipython().run_line_magic('sx', 'jupyter nbconvert --to html --output-dir=$params.results_dir --TemplateExporter.exclude_input=True LANL_NB.ipynb')
 
